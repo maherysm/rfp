@@ -37,3 +37,11 @@ def test_no_route():
     plan = plan_route([leg("AAA", "BBB", 1)], "BBB", "AAA", [], max_days=5)
     assert plan["route"] == []
     assert plan["issue"] == "No route on our network"
+
+
+def test_same_origin_and_destination_is_rejected():
+    plan = plan_route([leg("AAA", "BBB", 1, DG)], "AAA", "AAA", [DG], max_days=5)
+    assert plan["route"] == []
+    assert plan["transit_days"] is None
+    assert plan["unmet"] == [DG]
+    assert plan["issue"] == "Origin and destination are the same"

@@ -28,15 +28,21 @@ def fastest_route(legs, origin, destination, required):
     return None
 
 
+def unroutable(requirements, issue):
+    return {"route": [], "transit_days": None, "met": [], "unmet": requirements, "issue": issue}
+
+
 def plan_route(legs, origin, destination, requirements, max_days):
     """Prefer a route where every leg supports every requirement (the cargo is on every flight).
     If none exists, take the fastest route and report which requirements it cannot meet."""
+    if origin == destination:
+        return unroutable(requirements, "Origin and destination are the same")
+
     path = fastest_route(legs, origin, destination, set(requirements))
     if path is None:
         path = fastest_route(legs, origin, destination, set())
     if path is None:
-        return {"route": [], "transit_days": None, "met": [], "unmet": requirements,
-                "issue": "No route on our network"}
+        return unroutable(requirements, "No route on our network")
 
     met = [r for r in requirements if all(r in leg["services"] for leg in path)]
     unmet = [r for r in requirements if r not in met]
