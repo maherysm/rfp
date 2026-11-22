@@ -102,6 +102,21 @@ def update_requirements(lane, requirements):
     log(lane["rfp_id"], "Human", f"Set requirements for {lane_name(lane)}: {', '.join(requirements) or 'none'}")
 
 
+ROUTE_FIELDS = ("route", "transit_days", "met", "unmet", "issue")
+
+
+def use_alternative_route(lane):
+    """A human chose the lane's other route option. The route it replaces becomes the alternative,
+    so the choice can be undone."""
+    current = {field: lane[field] for field in ROUTE_FIELDS}
+    chosen = {field: lane["alternative"][field] for field in ROUTE_FIELDS}
+    db.update("lanes", lane["id"], **chosen, alternative=current)
+    dropped = ", ".join(chosen["unmet"]) or "nothing"
+    log(lane["rfp_id"], "Human",
+        f"Chose route {' > '.join(chosen['route'])} for {lane_name(lane)} "
+        f"({chosen['transit_days']:g} days, not available: {dropped})")
+
+
 def pricing_request_email(lanes):
     lines = ["Hi Pricing team,", "", "Please recommend a price per ton (USD) for each lane below,",
              "including the special services listed.", ""]

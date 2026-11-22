@@ -106,3 +106,38 @@ def test_requirements_can_only_be_edited_during_plan_review():
     assert client.put(f"/api/lanes/{lane_id}/requirements", json=body).status_code == 200
     client.post(f"/api/rfps/{rfp_id}/approve-plan")
     assert client.put(f"/api/lanes/{lane_id}/requirements", json=body).status_code == 409
+
+
+def test_human_can_switch_a_lane_to_the_faster_route_and_back(monkeypatch):
+    import db
+    import workflow
+
+    dg, fragile = "Dangerous goods", "Fragile handling"
+    monkeypatch.setattr(workflow, "TRANSIT_LEGS", [
+        {"origin": "AAA", "destination": "BBB", "days": 2, "services": [dg]},
+        {"origin": "AAA", "destination": "HUB", "days": 4, "services": [dg, fragile]},
+        {"origin": "HUB", "destination": "BBB", "days": 4, "services": [dg, fragile]},
+    ])
+    lane = {"origin": "AAA", "destination": "BBB", "tons": 10, "max_days": 5, "email": "General cargo."}
+    rfp_id = workflow.start_rfp([lane], "maya@shipper.example")
+    lane_id = lane_named(rfp_id, "AAA-BBB")["id"]
+    client.put(f"/api/lanes/{lane_id}/requirements", json={"requirements": [dg, fragile]})
+
+    lane = lane_named(rfp_id, "AAA-BBB")
+    assert lane["route"] == ["AAA", "HUB", "BBB"]
+    assert lane["alternative"]["route"] == ["AAA", "BBB"]
+
+    fast = {"route": ["AAA", "BBB"]}
+    assert client.put(f"/api/lanes/{lane_id}/route", json=fast).status_code == 200
+    assert client.put(f"/api/lanes/{lane_id}/route", json=fast).status_code == 200  # repeat click: no swap back
+    lane = lane_named(rfp_id, "AAA-BBB")
+    assert (lane["route"], lane["transit_days"], lane["unmet"]) == (["AAA", "BBB"], 2, [fragile])
+    assert lane["alternative"]["route"] == ["AAA", "HUB", "BBB"]
+    assert "AAA > BBB" in workflow.pricing_request_email([lane])
+
+    assert client.put(f"/api/lanes/{lane_id}/route", json={"route": ["AAA", "XXX", "BBB"]}).status_code == 409
+    assert client.put(f"/api/lanes/{lane_id}/route", json={"route": ["AAA", "HUB", "BBB"]}).status_code == 200
+    assert lane_named(rfp_id, "AAA-BBB")["unmet"] == []
+
+    db.update("rfps", rfp_id, status="review_prices")
+    assert client.put(f"/api/lanes/{lane_id}/route", json=fast).status_code == 409

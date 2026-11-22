@@ -106,6 +106,10 @@ class PriceIn(BaseModel):
     price: float = Field(gt=0)
 
 
+class RouteIn(BaseModel):
+    route: list[str]
+
+
 @app.put("/api/lanes/{lane_id}/requirements")
 def set_requirements(lane_id: int, body: RequirementsIn):
     lane = find_lane(lane_id, "review_plan")
@@ -113,6 +117,19 @@ def set_requirements(lane_id: int, body: RequirementsIn):
     if unknown:
         raise HTTPException(400, f"Unknown requirements: {unknown}")
     workflow.update_requirements(lane, body.requirements)
+    return {"ok": True}
+
+
+@app.put("/api/lanes/{lane_id}/route")
+def choose_route(lane_id: int, body: RouteIn):
+    """Switch the lane to its alternative route. The body names the route wanted, so a repeated
+    click or a stale page can't silently swap back to the other option."""
+    lane = find_lane(lane_id, "review_plan")
+    if lane["route"] == body.route:
+        return {"ok": True}
+    if not lane["alternative"] or lane["alternative"]["route"] != body.route:
+        raise HTTPException(409, "That route is not an option for this lane. Refresh the page.")
+    workflow.use_alternative_route(lane)
     return {"ok": True}
 
 
