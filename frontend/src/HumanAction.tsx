@@ -11,7 +11,8 @@ const REPLY_EXAMPLES = {
 
 // The yellow box: tells the user what the agents need from them right now.
 export function HumanAction({ rfp, busy, run }: Props) {
-  const [quote, setQuote] = useState(rfp.quote ?? "");
+  const [intro, setIntro] = useState(rfp.quote_draft?.intro ?? "");
+  const [closing, setClosing] = useState(rfp.quote_draft?.closing ?? "");
   const [reply, setReply] = useState(REPLY_EXAMPLES.Accept);
 
   if (rfp.status === "working") return <div className="action agent">Agents are working…</div>;
@@ -62,10 +63,23 @@ export function HumanAction({ rfp, busy, run }: Props) {
 
       {rfp.status === "review_quote" && (
         <>
-          <p>Edit the quote if needed. Nothing is sent to {rfp.customer_email} until you approve.</p>
-          <textarea rows={14} value={quote} onChange={(e) => setQuote(e.target.value)} />
-          <button className="primary" disabled={busy || !quote.trim()} onClick={() => run(() => api.approveQuote(rfp.id, quote))}>
+          <p>
+            Edit the opening and closing if needed. Nothing is sent to {rfp.customer_email} until you approve.
+            The lane details come from the lane table and can't be edited here; to change a price, go back to
+            price review.
+          </p>
+          <textarea rows={4} value={intro} onChange={(e) => setIntro(e.target.value)} />
+          <pre>{rfp.quote_draft?.lane_details}</pre>
+          <textarea rows={4} value={closing} onChange={(e) => setClosing(e.target.value)} />
+          <button
+            className="primary"
+            disabled={busy || !intro.trim() || !closing.trim()}
+            onClick={() => run(() => api.approveQuote(rfp.id, intro, closing))}
+          >
             Approve and send to customer
+          </button>
+          <button disabled={busy} onClick={() => run(() => api.reopenPrices(rfp.id))}>
+            Back to prices
           </button>
         </>
       )}

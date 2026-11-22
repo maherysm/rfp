@@ -40,6 +40,7 @@ export type Rfp = RfpSummary & {
   lanes: Lane[];
   emails: Email[];
   pricing_draft: string | null;
+  quote_draft: { intro: string; lane_details: string; closing: string } | null;
   missing_prices: string[];
   proposal: { lane_count: number; total_tons: number; total_value: number } | null;
   meeting: { title: string; starts_at: string; attendees: string[] } | null;
@@ -83,7 +84,9 @@ export const api = {
   setPrice: (laneId: number, price: number) => call("PUT", `/lanes/${laneId}/price`, { price }),
   approvePlan: (id: number) => call("POST", `/rfps/${id}/approve-plan`),
   approvePrices: (id: number) => call("POST", `/rfps/${id}/approve-prices`),
-  approveQuote: (id: number, text: string) => call("POST", `/rfps/${id}/approve-quote`, { text }),
+  approveQuote: (id: number, intro: string, closing: string) =>
+    call("POST", `/rfps/${id}/approve-quote`, { intro, closing }),
+  reopenPrices: (id: number) => call("POST", `/rfps/${id}/reopen-prices`),
   customerReply: (id: number, text: string) => call("POST", `/rfps/${id}/customer-reply`, { text }),
   decide: (id: number, decision: "accepted" | "declined") => call("POST", `/rfps/${id}/decide`, { decision }),
 };
