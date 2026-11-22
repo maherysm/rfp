@@ -142,9 +142,15 @@ def missing_prices(rfp_id):
 
 
 # ---------- step 3: draft the quote ----------
+# The human may edit only the intro and closing. The lane details (routes, days, prices) are always
+# rebuilt from the lanes table, so the email the customer gets matches what log_proposal saves.
 
-def quote_email(lanes):
-    lines = ["Dear customer,", "", "Thank you for your RFP. Our proposal for each lane:", ""]
+QUOTE_INTRO = "Dear customer,\n\nThank you for your RFP. Our proposal for each lane:"
+QUOTE_CLOSING = "Please reply to this email to accept the proposal.\n\nKind regards,\nRFP Response Team"
+
+
+def quote_lane_details(lanes):
+    lines = []
     for lane in lanes:
         if not lane["route"]:
             continue
@@ -159,21 +165,31 @@ def quote_email(lanes):
     unserved = [lane_name(lane) for lane in lanes if not lane["route"]]
     if unserved:
         lines += ["", f"We cannot serve these lanes on our network: {', '.join(unserved)}"]
-    lines += ["", "Please reply to this email to accept the proposal.", "", "Kind regards,",
-              "RFP Response Team"]
-    return "\n".join(lines)
+    return "\n".join(lines).strip("\n")
+
+
+def quote_email(lanes, intro=QUOTE_INTRO, closing=QUOTE_CLOSING):
+    parts = [intro.strip(), quote_lane_details(lanes), closing.strip()]
+    return "\n\n".join(part for part in parts if part)
 
 
 def draft_quote(rfp_id):
     db.update("rfps", rfp_id, quote=quote_email(lanes_of(rfp_id)))
     log(rfp_id, "Quote Agent", "Drafted the quote email")
-    wait_for_human(rfp_id, "review_quote", "edit the quote if needed, then approve sending it")
+    wait_for_human(rfp_id, "review_quote", "edit the quote's intro and closing if needed, then approve sending it")
+
+
+def reopen_prices(rfp_id):
+    """A human wants to change a price after the quote was drafted; prices are only edited in price review."""
+    log(rfp_id, "Human", "Went back to price review")
+    wait_for_human(rfp_id, "review_prices", "check the prices")
 
 
 # ---------- step 4: send the quote and handle the customer's reply ----------
 
-def send_quote(rfp_id, text):
+def send_quote(rfp_id, intro, closing):
     rfp = get_rfp(rfp_id)
+    text = quote_email(lanes_of(rfp_id), intro, closing)
     db.update("rfps", rfp_id, quote=text)
     send_email(rfp_id, "out", rfp["customer_email"], "Your air freight proposal", text)
     log(rfp_id, "Quote Agent", f"Sent the quote to {rfp['customer_email']}")

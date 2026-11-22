@@ -61,6 +61,11 @@ def get_rfp(rfp_id: int):
         "lanes": lanes,
         "emails": db.query("SELECT * FROM emails WHERE rfp_id = ? ORDER BY id", (rfp_id,)),
         "pricing_draft": workflow.pricing_request_email(lanes) if rfp["status"] == "review_plan" else None,
+        "quote_draft": {
+            "intro": workflow.QUOTE_INTRO,
+            "lane_details": workflow.quote_lane_details(lanes),
+            "closing": workflow.QUOTE_CLOSING,
+        } if rfp["status"] == "review_quote" else None,
         "missing_prices": workflow.missing_prices(rfp_id),
         "proposal": proposals[0] if proposals else None,
         "meeting": meetings[0] if meetings else None,
@@ -120,7 +125,9 @@ def set_price(lane_id: int, body: PriceIn):
 # ---------- human approvals: each one starts the next agent step ----------
 
 class QuoteIn(BaseModel):
-    text: str = Field(min_length=1)
+    """Only the free text around the lane details; prices can't be changed here."""
+    intro: str = Field(min_length=1)
+    closing: str = Field(min_length=1)
 
 
 class ReplyIn(BaseModel):
@@ -146,7 +153,12 @@ def approve_prices(rfp_id: int):
 
 @app.post("/api/rfps/{rfp_id}/approve-quote")
 def approve_quote(rfp_id: int, body: QuoteIn):
-    return run_step(rfp_id, "review_quote", workflow.send_quote, body.text)
+    return run_step(rfp_id, "review_quote", workflow.send_quote, body.intro, body.closing)
+
+
+@app.post("/api/rfps/{rfp_id}/reopen-prices")
+def reopen_prices(rfp_id: int):
+    return run_step(rfp_id, "review_quote", workflow.reopen_prices)
 
 
 @app.post("/api/rfps/{rfp_id}/customer-reply")
