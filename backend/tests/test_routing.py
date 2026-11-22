@@ -44,6 +44,10 @@ def test_suggests_faster_route_when_compliant_one_is_too_slow():
     assert plan["unmet"] == []
     assert "exceeds" in plan["issue"]
     assert "Faster option: AAA > BBB in 2 days, without Fragile handling" in plan["issue"]
+    assert plan["alternative"]["route"] == ["AAA", "BBB"]
+    assert plan["alternative"]["transit_days"] == 2
+    assert plan["alternative"]["unmet"] == [FRAGILE]
+    assert plan["alternative"]["issue"] == "Not available on every leg: Fragile handling"
 
 
 def test_no_faster_option_when_nothing_fits():
@@ -51,6 +55,7 @@ def test_no_faster_option_when_nothing_fits():
     plan = plan_route(legs, "AAA", "BBB", [DG, FRAGILE], max_days=5)
     assert "exceeds" in plan["issue"]
     assert "Faster option" not in plan["issue"]
+    assert plan["alternative"] is None
 
 
 def test_no_route():

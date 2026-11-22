@@ -36,33 +36,12 @@ def fastest_route(legs, origin, destination, required):
 
 
 def unroutable(requirements, issue):
-    return {"route": [], "transit_days": None, "met": [], "unmet": requirements, "issue": issue}
+    return {"route": [], "transit_days": None, "met": [], "unmet": requirements, "issue": issue,
+            "alternative": None}
 
 
-def faster_option(legs, origin, destination, requirements, max_days):
-    """When the compliant route is too slow, point out an on-time route that drops some
-    requirements, so a human can choose. The trade-off is never made automatically."""
-    path = fastest_route(legs, origin, destination, set())
-    days = sum(leg["days"] for leg in path)
-    if days > max_days:
-        return []
-    route = " > ".join([path[0]["origin"]] + [leg["destination"] for leg in path])
-    dropped = [r for r in requirements if not all(r in leg["services"] for leg in path)]
-    return [f"Faster option: {route} in {days:g} days, without {', '.join(dropped)}"]
-
-
-def plan_route(legs, origin, destination, requirements, max_days):
-    """Prefer a route where every leg supports every requirement (the cargo is on every flight).
-    If none exists, take the fastest route and report which requirements it cannot meet."""
-    if origin == destination:
-        return unroutable(requirements, "Origin and destination are the same")
-
-    path = fastest_route(legs, origin, destination, set(requirements))
-    if path is None:
-        path = fastest_route(legs, origin, destination, set())
-    if path is None:
-        return unroutable(requirements, "No route on our network")
-
+def describe(path, requirements, max_days):
+    """What a route offers the customer: its airports, transit time, requirements met and issues."""
     met = [r for r in requirements if all(r in leg["services"] for leg in path)]
     unmet = [r for r in requirements if r not in met]
     days = sum(leg["days"] for leg in path)
@@ -72,8 +51,6 @@ def plan_route(legs, origin, destination, requirements, max_days):
         issues.append("Not available on every leg: " + ", ".join(unmet))
     if days > max_days:
         issues.append(f"Transit {days:g} days exceeds the {max_days:g}-day maximum")
-        if requirements and not unmet:
-            issues += faster_option(legs, origin, destination, requirements, max_days)
 
     return {
         "route": [path[0]["origin"]] + [leg["destination"] for leg in path],
@@ -82,3 +59,29 @@ def plan_route(legs, origin, destination, requirements, max_days):
         "unmet": unmet,
         "issue": "; ".join(issues) or None,
     }
+
+
+def plan_route(legs, origin, destination, requirements, max_days):
+    """Prefer a route where every leg supports every requirement (the cargo is on every flight).
+    If none exists, take the fastest route and report which requirements it cannot meet.
+
+    When the compliant route is too slow but an on-time route exists that drops some requirements,
+    that route is returned as `alternative` so a human can choose. The trade-off is never made
+    automatically."""
+    if origin == destination:
+        return unroutable(requirements, "Origin and destination are the same")
+
+    path = fastest_route(legs, origin, destination, set(requirements))
+    if path is None:
+        path = fastest_route(legs, origin, destination, set())
+    if path is None:
+        return unroutable(requirements, "No route on our network")
+
+    plan = {**describe(path, requirements, max_days), "alternative": None}
+    if plan["transit_days"] > max_days and requirements and not plan["unmet"]:
+        faster = describe(fastest_route(legs, origin, destination, set()), requirements, max_days)
+        if faster["transit_days"] <= max_days:
+            plan["alternative"] = faster
+            plan["issue"] += (f"; Faster option: {' > '.join(faster['route'])} in "
+                              f"{faster['transit_days']:g} days, without {', '.join(faster['unmet'])}")
+    return plan

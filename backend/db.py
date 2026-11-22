@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS rfps (
 CREATE TABLE IF NOT EXISTS lanes (
     id INTEGER PRIMARY KEY, rfp_id INTEGER, origin TEXT, destination TEXT, tons REAL,
     max_days REAL, email TEXT, requirements TEXT DEFAULT '[]', route TEXT DEFAULT '[]',
-    transit_days REAL, met TEXT DEFAULT '[]', unmet TEXT DEFAULT '[]', issue TEXT, price REAL);
+    transit_days REAL, met TEXT DEFAULT '[]', unmet TEXT DEFAULT '[]', issue TEXT, price REAL,
+    alternative TEXT);
 CREATE TABLE IF NOT EXISTS emails (
     id INTEGER PRIMARY KEY, rfp_id INTEGER, direction TEXT, party TEXT, subject TEXT,
     body TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
@@ -27,7 +28,11 @@ CREATE TABLE IF NOT EXISTS meetings (
     id INTEGER PRIMARY KEY, rfp_id INTEGER, title TEXT, starts_at TEXT, attendees TEXT);
 """
 
-JSON_COLUMNS = {"requirements", "route", "met", "unmet", "details", "attendees"}
+JSON_COLUMNS = {"requirements", "route", "met", "unmet", "details", "attendees", "alternative"}
+NULLABLE_JSON_COLUMNS = {"alternative"}  # read back as None when empty, not []
+
+# Columns added after the first release, so databases created earlier get them too.
+ADDED_COLUMNS = {"lanes": {"alternative": "TEXT"}}
 
 
 def connect():
@@ -39,6 +44,12 @@ def connect():
 def init():
     conn = connect()
     conn.executescript(SCHEMA)
+    for table, columns in ADDED_COLUMNS.items():
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for column, column_type in columns.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+    conn.commit()
     conn.close()
 
 
@@ -63,7 +74,8 @@ def query(sql, params=()):
     for row in rows:
         item = dict(row)
         for column in JSON_COLUMNS & item.keys():
-            item[column] = json.loads(item[column]) if item[column] else []
+            empty = None if column in NULLABLE_JSON_COLUMNS else []
+            item[column] = json.loads(item[column]) if item[column] else empty
         result.append(item)
     return result
 
