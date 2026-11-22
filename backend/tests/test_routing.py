@@ -33,6 +33,26 @@ def test_reports_unmet_requirements_and_slow_transit():
     assert "Dangerous goods" in plan["issue"] and "exceeds" in plan["issue"]
 
 
+def test_suggests_faster_route_when_compliant_one_is_too_slow():
+    legs = [
+        leg("AAA", "BBB", 2, DG),  # on time, but no fragile handling
+        leg("AAA", "HUB", 4, DG, FRAGILE),
+        leg("HUB", "BBB", 4, DG, FRAGILE),
+    ]
+    plan = plan_route(legs, "AAA", "BBB", [DG, FRAGILE], max_days=5)
+    assert plan["route"] == ["AAA", "HUB", "BBB"]
+    assert plan["unmet"] == []
+    assert "exceeds" in plan["issue"]
+    assert "Faster option: AAA > BBB in 2 days, without Fragile handling" in plan["issue"]
+
+
+def test_no_faster_option_when_nothing_fits():
+    legs = [leg("AAA", "BBB", 6, DG), leg("AAA", "HUB", 4, DG, FRAGILE), leg("HUB", "BBB", 4, DG, FRAGILE)]
+    plan = plan_route(legs, "AAA", "BBB", [DG, FRAGILE], max_days=5)
+    assert "exceeds" in plan["issue"]
+    assert "Faster option" not in plan["issue"]
+
+
 def test_no_route():
     plan = plan_route([leg("AAA", "BBB", 1)], "BBB", "AAA", [], max_days=5)
     assert plan["route"] == []

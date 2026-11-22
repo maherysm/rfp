@@ -32,6 +32,18 @@ def unroutable(requirements, issue):
     return {"route": [], "transit_days": None, "met": [], "unmet": requirements, "issue": issue}
 
 
+def faster_option(legs, origin, destination, requirements, max_days):
+    """When the compliant route is too slow, point out an on-time route that drops some
+    requirements, so a human can choose. The trade-off is never made automatically."""
+    path = fastest_route(legs, origin, destination, set())
+    days = sum(leg["days"] for leg in path)
+    if days > max_days:
+        return []
+    route = " > ".join([path[0]["origin"]] + [leg["destination"] for leg in path])
+    dropped = [r for r in requirements if not all(r in leg["services"] for leg in path)]
+    return [f"Faster option: {route} in {days:g} days, without {', '.join(dropped)}"]
+
+
 def plan_route(legs, origin, destination, requirements, max_days):
     """Prefer a route where every leg supports every requirement (the cargo is on every flight).
     If none exists, take the fastest route and report which requirements it cannot meet."""
@@ -53,6 +65,8 @@ def plan_route(legs, origin, destination, requirements, max_days):
         issues.append("Not available on every leg: " + ", ".join(unmet))
     if days > max_days:
         issues.append(f"Transit {days:g} days exceeds the {max_days:g}-day maximum")
+        if requirements and not unmet:
+            issues += faster_option(legs, origin, destination, requirements, max_days)
 
     return {
         "route": [path[0]["origin"]] + [leg["destination"] for leg in path],
