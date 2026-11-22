@@ -58,6 +58,41 @@ def test_no_faster_option_when_nothing_fits():
     assert plan["alternative"] is None
 
 
+def partial_network():
+    """No leg offers fragile handling. AAA > BBB is fastest but has no dangerous goods handling;
+    AAA > CCC > BBB keeps dangerous goods; AAA > HUB > BBB does too but is slower."""
+    return [
+        leg("AAA", "BBB", 1),
+        leg("AAA", "CCC", 2, DG),
+        leg("CCC", "BBB", 2, DG),
+        leg("AAA", "HUB", 4, DG),
+        leg("HUB", "BBB", 4, DG),
+    ]
+
+
+def test_when_nothing_meets_everything_take_the_route_meeting_the_most():
+    plan = plan_route(partial_network(), "AAA", "BBB", [DG, FRAGILE], max_days=5)
+    assert plan["route"] == ["AAA", "CCC", "BBB"]
+    assert (plan["met"], plan["unmet"]) == ([DG], [FRAGILE])
+    assert plan["alternative"] is None
+
+
+def test_too_slow_partial_route_offers_the_on_time_one():
+    plan = plan_route(partial_network(), "AAA", "BBB", [DG, FRAGILE], max_days=3)
+    assert plan["route"] == ["AAA", "CCC", "BBB"]
+    assert plan["alternative"]["route"] == ["AAA", "BBB"]
+    assert "Faster option: AAA > BBB in 1 days, without Dangerous goods, Fragile handling" in plan["issue"]
+
+
+def test_alternative_drops_as_few_requirements_as_possible():
+    legs = partial_network() + [leg("AAA", "HUB", 4, DG, FRAGILE), leg("HUB", "BBB", 4, DG, FRAGILE)]
+    plan = plan_route(legs, "AAA", "BBB", [DG, FRAGILE], max_days=5)
+    assert plan["route"] == ["AAA", "HUB", "BBB"]
+    assert plan["unmet"] == []
+    assert plan["alternative"]["route"] == ["AAA", "CCC", "BBB"]
+    assert plan["alternative"]["unmet"] == [FRAGILE]
+
+
 def test_no_route():
     plan = plan_route([leg("AAA", "BBB", 1)], "BBB", "AAA", [], max_days=5)
     assert plan["route"] == []

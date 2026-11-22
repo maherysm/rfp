@@ -2,6 +2,7 @@
 
 import heapq
 from collections import defaultdict
+from itertools import combinations
 
 
 def fastest_route(legs, origin, destination, required):
@@ -61,27 +62,44 @@ def describe(path, requirements, max_days):
     }
 
 
-def plan_route(legs, origin, destination, requirements, max_days):
-    """Prefer a route where every leg supports every requirement (the cargo is on every flight).
-    If none exists, take the fastest route and report which requirements it cannot meet.
+def most_requirements(options):
+    """The option that meets the most requirements (all count equally); the fastest one if tied."""
+    return max(options, key=lambda option: (len(option["met"]), -option["transit_days"]))
 
-    When the compliant route is too slow but an on-time route exists that drops some requirements,
-    that route is returned as `alternative` so a human can choose. The trade-off is never made
+
+def route_options(legs, origin, destination, requirements, max_days):
+    """The fastest route that keeps each combination of requirements on every leg. A lane has at
+    most a handful of requirements, so trying every combination stays cheap."""
+    options = {}
+    for count in range(len(requirements) + 1):
+        for kept in combinations(requirements, count):
+            path = fastest_route(legs, origin, destination, set(kept))
+            if path:
+                option = describe(path, requirements, max_days)
+                key = tuple(option["route"])
+                options[key] = most_requirements([options[key], option]) if key in options else option
+    return list(options.values())
+
+
+def plan_route(legs, origin, destination, requirements, max_days):
+    """Take the route that meets the most requirements on every leg (the cargo is on every flight),
+    the fastest one if several tie, and report which requirements it cannot meet.
+
+    When that route is too slow but an on-time route exists, the on-time route meeting the most
+    requirements is returned as `alternative` so a human can choose. The trade-off is never made
     automatically."""
     if origin == destination:
         return unroutable(requirements, "Origin and destination are the same")
 
-    path = fastest_route(legs, origin, destination, set(requirements))
-    if path is None:
-        path = fastest_route(legs, origin, destination, set())
-    if path is None:
+    options = route_options(legs, origin, destination, requirements, max_days)
+    if not options:
         return unroutable(requirements, "No route on our network")
 
-    plan = {**describe(path, requirements, max_days), "alternative": None}
-    if plan["transit_days"] > max_days and requirements and not plan["unmet"]:
-        faster = describe(fastest_route(legs, origin, destination, set()), requirements, max_days)
-        if faster["transit_days"] <= max_days:
-            plan["alternative"] = faster
-            plan["issue"] += (f"; Faster option: {' > '.join(faster['route'])} in "
-                              f"{faster['transit_days']:g} days, without {', '.join(faster['unmet'])}")
+    plan = {**most_requirements(options), "alternative": None}
+    on_time = [option for option in options if option["transit_days"] <= max_days]
+    if plan["transit_days"] > max_days and on_time:
+        faster = most_requirements(on_time)
+        plan["alternative"] = faster
+        plan["issue"] += (f"; Faster option: {' > '.join(faster['route'])} in "
+                          f"{faster['transit_days']:g} days, without {', '.join(faster['unmet'])}")
     return plan
