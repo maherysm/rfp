@@ -12,19 +12,26 @@ def fastest_route(legs, origin, destination, required):
         if required.issubset(leg["services"]):
             by_origin[leg["origin"]].append(leg)
 
-    queue = [(0, origin, [])]  # (days so far, airport, legs taken to get there)
+    queue = [(0, origin)]  # (days so far, airport)
     best_days = {origin: 0}
+    came_by = {}  # airport -> leg used to reach it on the fastest known path
     while queue:
-        days, airport, path = heapq.heappop(queue)
+        days, airport = heapq.heappop(queue)
         if airport == destination:
-            return path
+            path = []
+            while airport != origin:
+                leg = came_by[airport]
+                path.append(leg)
+                airport = leg["origin"]
+            return path[::-1]
         if days > best_days[airport]:
             continue  # stale entry: a faster path to this airport was already expanded
         for leg in by_origin[airport]:
             arrival = days + leg["days"]
             if arrival < best_days.get(leg["destination"], float("inf")):
                 best_days[leg["destination"]] = arrival
-                heapq.heappush(queue, (arrival, leg["destination"], path + [leg]))
+                came_by[leg["destination"]] = leg
+                heapq.heappush(queue, (arrival, leg["destination"]))
     return None
 
 
