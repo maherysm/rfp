@@ -147,7 +147,7 @@ def approve_plan(rfp_id: int):
 def approve_prices(rfp_id: int):
     missing = workflow.missing_prices(rfp_id)
     if missing:
-        raise HTTPException(400, f"Enter a price for: {', '.join(missing)}")
+        raise HTTPException(400, f"Enter a positive price for: {', '.join(missing)}")
     return run_step(rfp_id, "review_prices", workflow.draft_quote)
 
 

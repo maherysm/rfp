@@ -4,6 +4,8 @@ which tells the UI which human action is needed next:
   review_plan -> review_prices -> review_quote -> awaiting_customer -> (review_reply) -> won / lost
 """
 
+import math
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -113,6 +115,34 @@ def pricing_request_email(lanes):
 
 # ---------- step 2: ask the Pricing team and read their reply ----------
 
+# Prices must be USD per ton. A reply line that says otherwise is not trusted, whatever number was read.
+OTHER_CURRENCY = re.compile(
+    r"[€£¥₹₩฿]|\b(?:HK|S|SG|A|AU|C|CA|NZ|NT|R|MX)\$"
+    r"|\b(?:EUR|GBP|JPY|CNY|RMB|HKD|SGD|AUD|CAD|NZD|CHF|INR|THB|KRW|MYR|AED|MXN|BRL|COP)\b"
+    r"|\b(?i:euros?|yen|yuan|renminbi|sterling|pesos?|reais)\b"
+)
+OTHER_UNIT = re.compile(
+    r"(?:\bper\s+|/\s*|\ba\s+)(?:kgs?|kilos?|kilograms?|lbs?|pounds?|shipments?|containers?|pallets?|lane)\b"
+    r"|\b(?:total|lump[- ]?sum|flat (?:fee|rate))\b",
+    re.IGNORECASE,
+)
+
+
+def price_problem(lane, price, reply):
+    """Why a price read from the Pricing team's reply can't be used for this lane, or None if it can."""
+    if not (math.isfinite(price) and price > 0):
+        return f"{price:g} is not a positive price"
+    for line in reply.splitlines():
+        if not any(f"{m[1]}-{m[2]}" == lane_name(lane) for m in ai.LANE_PATTERN.finditer(line)):
+            continue
+        text = ai.LANE_PATTERN.sub(" ", line)  # airport codes must not be mistaken for currency codes
+        if found := OTHER_CURRENCY.search(text):
+            return f"the reply uses another currency ({found[0]}), not USD"
+        if found := OTHER_UNIT.search(text):
+            return f"the reply is not per ton ({found[0].strip()})"
+    return None
+
+
 def request_pricing(rfp_id):
     lanes = [lane for lane in lanes_of(rfp_id) if lane["route"]]
     send_email(rfp_id, "out", PRICING_EMAIL, "Pricing request", pricing_request_email(lanes))
@@ -124,9 +154,14 @@ def request_pricing(rfp_id):
 
     prices = ai.parse_pricing_email(reply)
     for lane in lanes:
-        db.update("lanes", lane["id"], price=prices.get(lane_name(lane)))
-    missing = [lane_name(lane) for lane in lanes if lane_name(lane) not in prices]
-    log(rfp_id, "Pricing Agent", f"Found prices for {len(lanes) - len(missing)} of {len(lanes)} lanes")
+        price = prices.get(lane_name(lane))
+        problem = price_problem(lane, price, reply) if price is not None else None
+        if problem:
+            log(rfp_id, "Pricing Agent", f"Ignored the price for {lane_name(lane)}: {problem}")
+            price = None
+        db.update("lanes", lane["id"], price=price)
+    missing = missing_prices(rfp_id)
+    log(rfp_id, "Pricing Agent", f"Found usable prices for {len(lanes) - len(missing)} of {len(lanes)} lanes")
 
     todo = f"enter the missing price for {', '.join(missing)}, then approve" if missing else "check the prices"
     wait_for_human(rfp_id, "review_prices", todo)
@@ -138,7 +173,8 @@ def set_price(lane, price):
 
 
 def missing_prices(rfp_id):
-    return [lane_name(lane) for lane in lanes_of(rfp_id) if lane["route"] and lane["price"] is None]
+    """Routed lanes that still need a usable (positive) price before the quote can be drafted."""
+    return [lane_name(lane) for lane in lanes_of(rfp_id) if lane["route"] and (lane["price"] or 0) <= 0]
 
 
 # ---------- step 3: draft the quote ----------

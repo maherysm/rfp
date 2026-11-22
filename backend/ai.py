@@ -70,7 +70,8 @@ def keyword_requirements(text):
 
 
 LANE_PATTERN = re.compile(r"\b([A-Z]{3})\s*(?:-|to|→)\s*([A-Z]{3})\b")
-PRICE_PATTERN = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)")
+# Keep a minus sign written as "-$2,500" or "$-2,500", so a negative price is caught rather than flipped.
+PRICE_PATTERN = re.compile(r"(-?)\$\s?(-?)([\d,]+(?:\.\d+)?)")
 
 
 def parse_pricing_email(body):
@@ -90,7 +91,8 @@ def parse_pricing_email(body):
         lane = LANE_PATTERN.search(line)
         price = PRICE_PATTERN.search(line)
         if lane and price:
-            prices[f"{lane[1]}-{lane[2]}"] = float(price[1].replace(",", ""))
+            sign = -1 if price[1] or price[2] else 1
+            prices[f"{lane[1]}-{lane[2]}"] = sign * float(price[3].replace(",", ""))
     return prices
 
 
