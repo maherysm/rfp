@@ -1,5 +1,13 @@
 // Types mirror the JSON returned by backend/main.py.
 
+export type RouteOption = {
+  route: string[];
+  transit_days: number;
+  met: string[];
+  unmet: string[];
+  issue: string | null;
+};
+
 export type Lane = {
   id: number;
   origin: string;
@@ -14,6 +22,7 @@ export type Lane = {
   unmet: string[];
   issue: string | null;
   price: number | null;
+  alternative: RouteOption | null;
 };
 
 export type Email = {
@@ -82,6 +91,7 @@ export const api = {
   setRequirements: (laneId: number, requirements: string[]) =>
     call("PUT", `/lanes/${laneId}/requirements`, { requirements }),
   setPrice: (laneId: number, price: number) => call("PUT", `/lanes/${laneId}/price`, { price }),
+  chooseRoute: (laneId: number, route: string[]) => call("PUT", `/lanes/${laneId}/route`, { route }),
   approvePlan: (id: number) => call("POST", `/rfps/${id}/approve-plan`),
   approvePrices: (id: number) => call("POST", `/rfps/${id}/approve-prices`),
   approveQuote: (id: number, intro: string, closing: string) =>

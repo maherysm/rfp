@@ -66,6 +66,20 @@ export function LaneTable({ rfp, run }: Props) {
                   <p>
                     <strong>Shipper email:</strong> {lane.email}
                   </p>
+                  {lane.alternative && (
+                    <p>
+                      <strong>Other route option:</strong> {lane.alternative.route.join(" > ")},{" "}
+                      {lane.alternative.transit_days} days (max {lane.max_days})
+                      {lane.alternative.unmet.length > 0
+                        ? `, not available: ${lane.alternative.unmet.join(", ")}`
+                        : ", meets every requirement"}{" "}
+                      {canEditRequirements && (
+                        <button onClick={() => run(() => api.chooseRoute(lane.id, lane.alternative!.route))}>
+                          Use this route
+                        </button>
+                      )}
+                    </p>
+                  )}
                   {canEditRequirements && (
                     <p>
                       <strong>Edit requirements:</strong>{" "}
