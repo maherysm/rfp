@@ -1,20 +1,26 @@
 """Find how each lane will be routed on the client's flight network."""
 
 import heapq
+from collections import defaultdict
 
 
 def fastest_route(legs, origin, destination, required):
     """Dijkstra's shortest path: the quickest sequence of flights from origin to destination,
     using only legs that offer every service in `required`. Returns a list of legs or None."""
+    by_origin = defaultdict(list)
+    for leg in legs:
+        if required.issubset(leg["services"]):
+            by_origin[leg["origin"]].append(leg)
+
     queue = [(0, origin, [])]  # (days so far, airport, legs taken to get there)
     best_days = {origin: 0}
     while queue:
         days, airport, path = heapq.heappop(queue)
         if airport == destination:
             return path
-        for leg in legs:
-            if leg["origin"] != airport or not required.issubset(leg["services"]):
-                continue
+        if days > best_days[airport]:
+            continue  # stale entry: a faster path to this airport was already expanded
+        for leg in by_origin[airport]:
             arrival = days + leg["days"]
             if arrival < best_days.get(leg["destination"], float("inf")):
                 best_days[leg["destination"]] = arrival
