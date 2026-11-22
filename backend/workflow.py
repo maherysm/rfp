@@ -205,11 +205,11 @@ def quote_lane_details(lanes):
     for lane in lanes:
         if not lane["route"]:
             continue
-        lines.append(
-            f"{lane_name(lane)}: route {' > '.join(lane['route'])}, "
-            f"{lane['transit_days']:g} days (your max {lane['max_days']:g}), "
-            f"${lane['price']:,.0f} per ton"
-        )
+        if lane["transit_days"] > lane["max_days"]:
+            days = f"{lane['transit_days']:g} days, over your {lane['max_days']:g}-day maximum"
+        else:
+            days = f"{lane['transit_days']:g} days (your max {lane['max_days']:g})"
+        lines.append(f"{lane_name(lane)}: route {' > '.join(lane['route'])}, {days}, ${lane['price']:,.0f} per ton")
         lines.append(f"    Special requirements met: {', '.join(lane['met']) or 'none requested'}")
         if lane["unmet"]:
             lines.append(f"    Not available: {', '.join(lane['unmet'])}")
@@ -287,6 +287,7 @@ def log_proposal(rfp_id):
     quoted = [lane for lane in lanes_of(rfp_id) if lane["route"] and lane["price"] is not None]
     details = [
         {"lane": lane_name(lane), "route": lane["route"], "tons": lane["tons"],
+         "transit_days": lane["transit_days"], "max_days": lane["max_days"],
          "price_per_ton": lane["price"], "met": lane["met"], "unmet": lane["unmet"]}
         for lane in quoted
     ]

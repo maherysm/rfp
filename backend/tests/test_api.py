@@ -2,6 +2,8 @@ from fastapi.testclient import TestClient
 import pytest
 
 import ai
+import db
+import workflow
 from main import app
 
 client = TestClient(app)
@@ -58,6 +60,9 @@ def test_full_workflow_from_rfp_to_logged_proposal():
     assert rfp["status"] == "won"
     assert rfp["proposal"]["lane_count"] == sum(1 for l in rfp["lanes"] if l["route"])
     assert rfp["meeting"]["title"] == "Contract kickoff"
+    agreed = {(d["lane"], d["transit_days"], d["max_days"]) for d in rfp["proposal"]["details"]}
+    assert agreed == {(f"{l['origin']}-{l['destination']}", l["transit_days"], l["max_days"])
+                      for l in rfp["lanes"] if l["route"]}
 
 
 @pytest.mark.parametrize("text", [
@@ -76,6 +81,13 @@ def test_acceptance_with_conditions_is_left_for_a_human(text):
 ])
 def test_plain_replies_are_still_decided(text, decision):
     assert ai.classify_reply(text) == decision
+
+
+def test_quote_says_when_transit_is_over_the_maximum():
+    lane = {"origin": "AAA", "destination": "BBB", "route": ["AAA", "BBB"], "met": [], "unmet": [],
+            "price": 2500, "max_days": 10}
+    assert "12 days, over your 10-day maximum" in workflow.quote_lane_details([{**lane, "transit_days": 12}])
+    assert "8 days (your max 10)" in workflow.quote_lane_details([{**lane, "transit_days": 8}])
 
 
 def test_unclear_reply_goes_to_a_human():
@@ -129,9 +141,6 @@ def test_requirements_can_only_be_edited_during_plan_review():
 
 
 def test_human_can_switch_a_lane_to_the_faster_route_and_back(monkeypatch):
-    import db
-    import workflow
-
     dg, fragile = "Dangerous goods", "Fragile handling"
     monkeypatch.setattr(workflow, "TRANSIT_LEGS", [
         {"origin": "AAA", "destination": "BBB", "days": 2, "services": [dg]},
