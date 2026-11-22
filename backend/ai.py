@@ -96,6 +96,13 @@ def parse_pricing_email(body):
     return prices
 
 
+# Conditions, questions or change requests attached to a "yes" (mirrors the LLM prompt below).
+RESERVATION = re.compile(
+    r"\?|\b(?:if|unless|provided|providing|subject to|but|except|however|as long as|"
+    r"on condition|assuming|instead|change|lower|reduce)\b"
+)
+
+
 def classify_reply(body):
     """Returns "accepted", "declined" or "unclear" for the customer's reply to the quote."""
     if llm_enabled():
@@ -112,7 +119,8 @@ def classify_reply(body):
     said_yes = any(w in text for w in ["we accept", "accepted", "go ahead", "happy to proceed"])
     said_no = any(w in text for w in ["decline", "reject", "another carrier", "not proceed"])
     if said_yes and not said_no:
-        return "accepted"
+        # "We accept, provided ..." is not agreement to the quote as sent, so a human must decide.
+        return "unclear" if RESERVATION.search(text) else "accepted"
     if said_no and not said_yes:
         return "declined"
     return "unclear"

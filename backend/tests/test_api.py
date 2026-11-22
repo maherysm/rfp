@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
+import pytest
 
+import ai
 from main import app
 
 client = TestClient(app)
@@ -56,6 +58,24 @@ def test_full_workflow_from_rfp_to_logged_proposal():
     assert rfp["status"] == "won"
     assert rfp["proposal"]["lane_count"] == sum(1 for l in rfp["lanes"] if l["route"])
     assert rfp["meeting"]["title"] == "Contract kickoff"
+
+
+@pytest.mark.parametrize("text", [
+    "We accept, provided GRU-SIN has fragile handling on every leg.",
+    "We accept, but only if transit on FRA-MEX is under 10 days.",
+    "Happy to proceed subject to a 5% discount.",
+    "We accept. Can you start in March?",
+])
+def test_acceptance_with_conditions_is_left_for_a_human(text):
+    assert ai.classify_reply(text) == "unclear"
+
+
+@pytest.mark.parametrize("text, decision", [
+    ("Thanks, we accept the proposal. Please go ahead.", "accepted"),
+    ("Thank you, but we have decided to go with another carrier.", "declined"),
+])
+def test_plain_replies_are_still_decided(text, decision):
+    assert ai.classify_reply(text) == decision
 
 
 def test_unclear_reply_goes_to_a_human():
