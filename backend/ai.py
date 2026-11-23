@@ -1,9 +1,16 @@
 """The three places the app uses an LLM. Each has a simple keyword fallback so the demo
-also runs without an OpenAI API key."""
+also runs without an API key. OpenAI, Claude (Anthropic) and Gemini are supported."""
 
 import json
 import os
 import re
+
+# provider: (display name, API key variables, model variable, default model)
+PROVIDERS = {
+    "openai": ("OpenAI", ["OPENAI_API_KEY"], "OPENAI_MODEL", "gpt-4o-mini"),
+    "anthropic": ("Claude", ["ANTHROPIC_API_KEY"], "ANTHROPIC_MODEL", "claude-haiku-4-5"),
+    "gemini": ("Gemini", ["GEMINI_API_KEY", "GOOGLE_API_KEY"], "GEMINI_MODEL", "gemini-2.5-flash"),
+}
 
 REQUIREMENTS = [
     "Temperature controlled (2-8 C)",
@@ -22,28 +29,89 @@ KEYWORDS = {
 }
 
 
+def has_key(name):
+    return any(os.environ.get(var) for var in PROVIDERS[name][1])
+
+
+def provider():
+    """The LLM provider to use, or None for the keyword rules.
+
+    LLM_PROVIDER (openai, anthropic or gemini) picks one explicitly; otherwise the first
+    provider with an API key set is used, in the order OpenAI, Claude, Gemini."""
+    chosen = os.environ.get("LLM_PROVIDER", "").strip().lower()
+    if chosen:
+        if chosen not in PROVIDERS:
+            raise ValueError(f"LLM_PROVIDER must be one of {list(PROVIDERS)}, got {chosen!r}")
+        return chosen if has_key(chosen) else None
+    return next((name for name in PROVIDERS if has_key(name)), None)
+
+
 def llm_enabled():
-    return bool(os.environ.get("OPENAI_API_KEY"))
+    return provider() is not None
 
 
 def mode():
-    return "OpenAI" if llm_enabled() else "keyword rules (no API key)"
+    name = provider()
+    if name is None:
+        return "keyword rules (no API key)"
+    label, _, model_var, default_model = PROVIDERS[name]
+    return f"{label} ({os.environ.get(model_var, default_model)})"
 
 
 def ask_llm(instructions, text):
-    """Send instructions plus text to OpenAI and return its JSON answer as a dict."""
-    from openai import OpenAI
+    """Send instructions plus text to the configured LLM and return its JSON answer as a dict."""
+    name = provider()
+    _, key_vars, model_var, default_model = PROVIDERS[name]
+    model = os.environ.get(model_var, default_model)
+    api_key = next(os.environ[var] for var in key_vars if os.environ.get(var))
 
-    response = OpenAI().chat.completions.create(
-        model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": text},
-        ],
-    )
-    return json.loads(response.choices[0].message.content)
+    if name == "openai":
+        from openai import OpenAI
+
+        response = OpenAI(api_key=api_key).chat.completions.create(
+            model=model,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": text},
+            ],
+        )
+        return json.loads(response.choices[0].message.content)
+
+    if name == "anthropic":
+        from anthropic import Anthropic
+
+        response = Anthropic(api_key=api_key).messages.create(
+            model=model,
+            max_tokens=4096,
+            system=instructions + " Reply with only the JSON object, no other text.",
+            messages=[{"role": "user", "content": text}],
+        )
+        return parse_json_object("".join(b.text for b in response.content if b.type == "text"))
+
+    from google import genai
+    from google.genai import types
+
+    with genai.Client(api_key=api_key) as client:
+        response = client.models.generate_content(
+            model=model,
+            contents=text,
+            config=types.GenerateContentConfig(
+                system_instruction=instructions,
+                temperature=0,
+                response_mime_type="application/json",
+            ),
+        )
+    return parse_json_object(response.text)
+
+
+def parse_json_object(reply):
+    """Parse a JSON object from a model reply, tolerating code fences or text around it."""
+    start, end = reply.find("{"), reply.rfind("}")
+    if start == -1 or end < start:
+        raise ValueError(f"Model did not return a JSON object: {reply[:200]!r}")
+    return json.loads(reply[start : end + 1])
 
 
 def extract_requirements(emails):

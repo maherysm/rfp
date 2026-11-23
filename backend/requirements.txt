@@ -3,5 +3,7 @@ uvicorn
 python-multipart
 openpyxl
 openai
+anthropic
+google-genai
 pytest
 httpx

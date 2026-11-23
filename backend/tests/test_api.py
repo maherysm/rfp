@@ -83,6 +83,31 @@ def test_plain_replies_are_still_decided(text, decision):
     assert ai.classify_reply(text) == decision
 
 
+@pytest.mark.parametrize("keys, chosen, expected", [
+    ({}, "", None),
+    ({"GEMINI_API_KEY": "g"}, "", "gemini"),
+    ({"GOOGLE_API_KEY": "g"}, "", "gemini"),
+    ({"ANTHROPIC_API_KEY": "a", "GEMINI_API_KEY": "g"}, "", "anthropic"),
+    ({"OPENAI_API_KEY": "o", "ANTHROPIC_API_KEY": "a"}, "Anthropic", "anthropic"),
+    ({"OPENAI_API_KEY": "o"}, "gemini", None),  # chosen provider has no key: stay offline
+])
+def test_llm_provider_follows_keys_and_llm_provider(monkeypatch, keys, chosen, expected):
+    for var, value in keys.items():
+        monkeypatch.setenv(var, value)
+    monkeypatch.setenv("LLM_PROVIDER", chosen)
+    assert ai.provider() == expected
+
+
+def test_unknown_llm_provider_is_rejected(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "mistral")
+    with pytest.raises(ValueError):
+        ai.provider()
+
+
+def test_json_answer_is_found_inside_a_chatty_reply():
+    assert ai.parse_json_object('Sure:\n```json\n{"decision": "accepted"}\n```') == {"decision": "accepted"}
+
+
 def test_quote_says_when_transit_is_over_the_maximum():
     lane = {"origin": "AAA", "destination": "BBB", "route": ["AAA", "BBB"], "met": [], "unmet": [],
             "price": 2500, "max_days": 10}
